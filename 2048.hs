@@ -146,7 +146,7 @@ runGame goal board score = do
 
 main = do
     let size = 4
-        goal = Just 32
+        goal = Just 2048
 
     Just startBoard <- insertRandom . fromJust =<< (insertRandom $ emptyBoard size)
 

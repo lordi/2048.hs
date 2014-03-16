@@ -6,3 +6,8 @@ cabal sandbox init
 cabal install --only-dependencies
 cabal run
 ```
+
+* `w`: go up
+* `a`: go left
+* `s`: go down
+* `d`: go right
