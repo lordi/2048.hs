@@ -9,10 +9,9 @@ import Data.Maybe
 import Data.List
 import System.Random
 
-import System.Console.Haskeline
-
 import qualified Data.Text as T
 
+import System.Console.Haskeline
 
 type Cell  = Maybe Int
 type Row   = [Cell]
@@ -29,57 +28,51 @@ instance Monoid ShiftResult where
 data MoveOutcome = Lose | Win | Active
 data RoundResult = RoundResult Score MoveOutcome Board 
 
-
 showBoard :: Board -> String
 showBoard = T.unpack . T.unlines . fmap formatRow
     where formatRow = T.intercalate "|" . fmap (T.center 4 ' ' . formatCell)
           formatCell (Just x) = T.pack $ show x
           formatCell _ = mempty
 
-
 shiftRow :: Row -> Writer ShiftResult Row
 shiftRow row = do
-    os <- liftM (++ nothings) . go $ group justs
+    os <- liftM (++ nothings) . addPairs $ group justs
     tell $ ShiftResult (Sum 0) (Any $ os /= row)
     return os
     where (justs, nothings) = partition isJust row
-          go ([]) = return []
-          go ([]:zs) = go zs
-          go ([x]:zs) = liftM (x :) $ go zs
-          go ((Just x:Just y:xs):zs) = do
+          addPairs ([]) = return []
+          addPairs ([]:zs) = addPairs zs
+          addPairs ([x]:zs) = liftM (x :) $ addPairs zs
+          addPairs ((Just x:Just y:xs):zs) = do
             let total = x + y
             tell $ ShiftResult (Sum total) (Any True)
-            rest <- go (xs:zs)
+            rest <- addPairs (xs:zs)
             return $ Just total : rest ++ [Nothing]
-          go _ = return []
-
+          addPairs _ = return []
 
 shiftBoard :: Direction -> Board -> (Board, ShiftResult)
 shiftBoard direction = runWriter . case direction of
-    West  -> mapM shiftRow
+    West  -> goWest
     East  -> goEast
-    North -> liftM transpose . mapM shiftRow . transpose
+    North -> liftM transpose . goWest . transpose
     South -> liftM transpose . goEast . transpose
-    where goEast = mapM $ liftM reverse . shiftRow . reverse
-
+    where goWest = mapM shiftRow
+          goEast = mapM $ liftM reverse . shiftRow . reverse
 
 emptyBoard :: Int -> Board
 emptyBoard n = replicate n $ replicate n Nothing
-
 
 -- | coords of available spaces
 available :: Board -> [(Int, Int)]
 available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices Nothing)
 
-
 --  ew
 update :: Board -> (Int, Int) -> Cell -> Board
 update board (x, y) val = newBoard
-    where (rs, (r:rs')) = splitAt x board
-          (cs, (_:cs')) = splitAt y r
+    where (rs, r:rs') = splitAt x board
+          (cs, _:cs') = splitAt y r
           newRow = cs <> [val] <> cs'
           newBoard = rs <> [newRow] <> rs'
-
 
 insertRandom :: Board -> IO (Maybe Board)
 insertRandom board
@@ -91,28 +84,25 @@ insertRandom board
         return . Just $ update board pos newCell
     where holes = available board
 
-
 winner :: Cell -> Board -> Bool
-winner winning = any (== winning) . concat
-
+winner winning = elem winning . concat
 
 gameRound :: Cell -> Direction -> Board -> IO RoundResult
 gameRound goal direction board =
     let (newBoard, ShiftResult (Sum newPoints) (Any change)) =
             shiftBoard direction board
         result = RoundResult newPoints
-    in case change of
-        False -> if null $ available newBoard
-            then return $ result Lose newBoard
-            else return $ result Active newBoard
-        True -> if winner goal newBoard
+    in if not change 
+        then return $ if null $ available newBoard
+            then result Lose newBoard
+            else result Active newBoard
+        else if winner goal newBoard
             then return $ result Win newBoard
             else do
                 randoBoard <- liftIO $ insertRandom newBoard
                 case randoBoard of
                     Nothing -> return $ result Lose newBoard
                     Just b  -> return $ result Active b
-
 
 runGame :: Cell -> Board -> Int -> InputT IO ()
 runGame goal board score = do
@@ -145,13 +135,12 @@ runGame goal board score = do
                         putStrLn $ "Total score is " ++ show totalScore ++ " points."
                     runGame goal newBoard totalScore
 
-
 main :: IO ()
 main = do
     let size = 4
         goal = Just 2048
 
-    Just startBoard <- insertRandom . fromJust =<< (insertRandom $ emptyBoard size)
+    Just startBoard <- insertRandom . fromJust =<< insertRandom (emptyBoard size)
 
     putStrLn "Use 'w', 'a', 's', and 'd' to move."
     runInputT defaultSettings $ runGame goal startBoard 0
