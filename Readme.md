@@ -1,4 +1,4 @@
-A tiny barebones haskell cli clone of the (2048)[http://git.io/2048] game.
+A small barebones haskell cli clone of the [2048](http://git.io/2048) game.
 
 ```
 cabal update && cabal install cabal-install
