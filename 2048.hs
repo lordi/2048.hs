@@ -38,11 +38,11 @@ showBoard = T.unpack . T.unlines . fmap formatRow
 
 
 shiftRow :: Row -> Writer ShiftResult Row
-shiftRow xs = do
+shiftRow row = do
     os <- liftM (++ nothings) . go $ group justs
-    tell $ ShiftResult (Sum 0) (Any $ os /= xs)
+    tell $ ShiftResult (Sum 0) (Any $ os /= row)
     return os
-    where (justs, nothings) = partition isJust xs
+    where (justs, nothings) = partition isJust row
           go ([]) = return []
           go ([]:zs) = go zs
           go ([x]:zs) = liftM (x :) $ go zs
@@ -51,6 +51,7 @@ shiftRow xs = do
             tell $ ShiftResult (Sum total) (Any True)
             rest <- go (xs:zs)
             return $ Just total : rest ++ [Nothing]
+          go _ = return []
 
 
 shiftBoard :: Direction -> Board -> (Board, ShiftResult)
@@ -75,7 +76,7 @@ available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices Nothing)
 update :: Board -> (Int, Int) -> Cell -> Board
 update board (x, y) val = newBoard
     where (rs, (r:rs')) = splitAt x board
-          (cs, (c:cs')) = splitAt y r
+          (cs, (_:cs')) = splitAt y r
           newRow = cs <> [val] <> cs'
           newBoard = rs <> [newRow] <> rs'
 
@@ -113,6 +114,7 @@ gameRound goal direction board =
                     Just b  -> return $ result Active b
 
 
+runGame :: Cell -> Board -> Int -> InputT IO ()
 runGame goal board score = do
     liftIO . putStrLn $ showBoard board
     input <- getInputChar "wasd: "
@@ -144,6 +146,7 @@ runGame goal board score = do
                     runGame goal newBoard totalScore
 
 
+main :: IO ()
 main = do
     let size = 4
         goal = Just 2048
