@@ -2,7 +2,7 @@
 
 -- | Quick crack at a minimal 2048 in haskell
 
-module Main where
+module HS2048 where
 
 import Control.Monad.Random
 import Control.Monad.Writer
