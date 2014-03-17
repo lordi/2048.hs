@@ -25,7 +25,7 @@ instance Monoid ShiftResult where
     mempty = ShiftResult (Sum 0) (Any False)
     mappend (ShiftResult a b) (ShiftResult x y) = ShiftResult (a <> x) (b <> y)
 
-data MoveOutcome = Lose | Win | Active
+data MoveOutcome = Lose | Win | Active | Invalid
 data RoundResult = RoundResult Score MoveOutcome Board 
 
 showBoard :: Board -> String
@@ -69,8 +69,8 @@ update :: Board -> (Int, Int) -> Cell -> Board
 update board (x, y) val = newBoard
     where (rs, r:rs') = splitAt x board
           (cs, _:cs') = splitAt y r
-          newRow = cs <> [val] <> cs'
-          newBoard = rs <> [newRow] <> rs'
+          newRow = cs <> (val : cs')
+          newBoard = rs <> (newRow : rs')
 
 insertRandom :: MonadRandom m => Board -> m (Maybe Board)
 insertRandom board
@@ -93,7 +93,7 @@ gameRound goal direction board =
     in if not change 
         then return $ if null $ available newBoard
             then result Lose newBoard
-            else result Active newBoard
+            else result Invalid board
         else if winner goal newBoard
             then return $ result Win newBoard
             else do
@@ -131,6 +131,9 @@ runGame goal board score = do
                     liftIO $ do
                         putStrLn $ "You earned " ++ show newPoints ++ " points."
                         putStrLn $ "Total score is " ++ show totalScore ++ " points."
+                    runGame goal newBoard totalScore
+                Invalid -> do
+                    liftIO $ putStrLn "Invalid move, try again."
                     runGame goal newBoard totalScore
 
 main :: IO ()
