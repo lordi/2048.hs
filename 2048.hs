@@ -4,10 +4,10 @@
 
 module Main where
 
+import Control.Monad.Random
 import Control.Monad.Writer
 import Data.Maybe
 import Data.List
-import System.Random
 
 import qualified Data.Text as T
 
@@ -72,12 +72,12 @@ update board (x, y) val = newBoard
           newRow = cs <> [val] <> cs'
           newBoard = rs <> [newRow] <> rs'
 
-insertRandom :: Board -> IO (Maybe Board)
+insertRandom :: MonadRandom m => Board -> m (Maybe Board)
 insertRandom board
     | null holes = return Nothing
     | otherwise = do
-        pos <- liftM (holes !!) $ randomRIO (0, length holes - 1)
-        coin <- randomRIO (0, 1) :: IO Float
+        pos <- liftM (holes !!) $ getRandomR (0, length holes - 1)
+        coin <- getRandomR (0 :: Float, 1)
         let newCell = Just $ if coin < 0.9 then 2 else 4
         return . Just $ update board pos newCell
     where holes = available board
@@ -85,7 +85,7 @@ insertRandom board
 winner :: Cell -> Board -> Bool
 winner winning = elem winning . concat
 
-gameRound :: Cell -> Direction -> Board -> IO RoundResult
+gameRound :: MonadRandom m => Cell -> Direction -> Board -> m RoundResult
 gameRound goal direction board =
     let (newBoard, ShiftResult (Sum newPoints) (Any change)) =
             shiftBoard direction board
@@ -97,7 +97,7 @@ gameRound goal direction board =
         else if winner goal newBoard
             then return $ result Win newBoard
             else do
-                randoBoard <- liftIO $ insertRandom newBoard
+                randoBoard <- insertRandom newBoard
                 case randoBoard of
                     Nothing -> return $ result Lose newBoard
                     Just b  -> return $ result Active b
