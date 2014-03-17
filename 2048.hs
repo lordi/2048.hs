@@ -36,19 +36,17 @@ showBoard = T.unpack . T.unlines . fmap formatRow
 
 shiftRow :: Row -> Writer ShiftResult Row
 shiftRow row = do
-    os <- liftM (++ nothings) . addPairs $ group justs
+    os <- liftM (++ nothings) $ sumPairs justs
     tell $ ShiftResult (Sum 0) (Any $ os /= row)
     return os
     where (justs, nothings) = partition isJust row
-          addPairs ([]) = return []
-          addPairs ([]:zs) = addPairs zs
-          addPairs ([x]:zs) = liftM (x :) $ addPairs zs
-          addPairs ((Just x:Just y:xs):zs) = do
+          sumPairs (Just x:Just y:zs) | x == y = do
             let total = x + y
             tell $ ShiftResult (Sum total) (Any True)
-            rest <- addPairs (xs:zs)
+            rest <- sumPairs zs
             return $ Just total : rest ++ [Nothing]
-          addPairs _ = return []
+          sumPairs (x:xs) = liftM (x :) $ sumPairs xs
+          sumPairs [] = return []
 
 shiftBoard :: Direction -> Board -> (Board, ShiftResult)
 shiftBoard direction = runWriter . case direction of
