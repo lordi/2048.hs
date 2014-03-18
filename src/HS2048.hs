@@ -6,15 +6,13 @@ module HS2048 where
 
 import Control.Monad.Random
 import Control.Monad.Writer
-import Data.Maybe
 import Data.List
 
 import qualified Data.Text as T
 
 import System.Console.Haskeline
 
-type Cell  a = Maybe a
-type Row   a = [Cell a]
+type Row   a = [a]
 type Board a = [Row a]
 data Direction = East | West | North | South deriving (Show, Eq)
 
@@ -24,19 +22,19 @@ data RoundResult a = RoundResult a MoveOutcome (Board a)
 showBoard :: (Monoid a, Show a) => Board a -> String
 showBoard = T.unpack . T.unlines . fmap formatRow
     where formatRow = T.intercalate "|" . fmap (T.center 20 ' ' . formatCell)
-          formatCell (Just x) = T.pack $ show x
-          formatCell _ = mempty
+          formatCell x = T.pack $ show x
 
 shiftRow :: (Monoid a, Eq a) => Row a -> Writer a (Row a)
 shiftRow row = liftM (++ nothings) $ sumPairs justs
-    where (justs, nothings) = partition isJust row
-          sumPairs (Just x:Just y:zs) | x == y = do
+    where (justs, nothings) = partition isNotEmpty row
+          sumPairs (x:y:zs) | x == y = do
             let total = x `mappend` y
             tell total
             rest <- sumPairs zs
-            return $ Just total : rest ++ [Nothing]
+            return $ total : (rest ++ [mempty])
           sumPairs (x:xs) = liftM (x :) $ sumPairs xs
           sumPairs [] = return []
+          isNotEmpty = (/= mempty)
 
 shiftBoard :: (Monoid a, Eq a) => Direction -> Board a -> (Board a, a)
 shiftBoard direction = runWriter . case direction of
@@ -47,15 +45,15 @@ shiftBoard direction = runWriter . case direction of
     where goWest = mapM shiftRow
           goEast = mapM $ liftM reverse . shiftRow . reverse
 
-emptyBoard :: Int -> Board a
-emptyBoard n = replicate n $ replicate n Nothing
+emptyBoard :: (Monoid a) => Int -> Board a
+emptyBoard n = replicate n $ replicate n mempty
 
 -- | coords of available spaces
-available :: (Eq a) => Board a -> [(Int, Int)]
-available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices Nothing)
+available :: (Eq a, Monoid a) => Board a -> [(Int, Int)]
+available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices mempty)
 
 --  ew
-update :: Board a -> (Int, Int) -> Cell a -> Board a
+update :: Board a -> (Int, Int) -> a -> Board a
 update board (x, y) val = newBoard
     where (rs, r:rs') = splitAt x board
           (cs, _:cs') = splitAt y r
@@ -68,14 +66,14 @@ insertRandom board initial
     | otherwise = do
         pos <- liftM (holes !!) $ getRandomR (0, length holes - 1)
         coin <- getRandomR (0 :: Float, 1)
-        let newCell = Just $ if coin < 0.9 then initial else (initial `mappend` initial)
+        let newCell = if coin < 0.9 then initial else (initial `mappend` initial)
         return . Just $ update board pos newCell
     where holes = available board
 
-winner :: (Monoid a, Eq a) => Cell a -> Board a -> Bool
+winner :: (Monoid a, Eq a) => a -> Board a -> Bool
 winner winning = elem winning . concat
 
-gameRound :: (MonadRandom m, Monoid a, Eq a) => a -> Cell a -> Direction -> Board a -> m (RoundResult a)
+gameRound :: (MonadRandom m, Monoid a, Eq a) => a -> a -> Direction -> Board a -> m (RoundResult a)
 gameRound initial goal direction board =
     let (newBoard, newPoints) =
             shiftBoard direction board
@@ -93,12 +91,12 @@ gameRound initial goal direction board =
                     Nothing -> return $ result Lose newBoard
                     Just b  -> return $ result Active b
 
-runGame :: (Monoid a, Show a, Eq a) => a -> Cell a -> Board a -> a -> InputT IO ()
-runGame initial goal board score= do
+runGame :: (Monoid a, Show a, Eq a) => a -> a -> Board a -> a -> InputT IO ()
+runGame initial goal board score = do
     liftIO . putStrLn $ showBoard board
     input <- getInputChar "wasd: "
     liftIO $ putStrLn ""
-    
+
     let direction = case input of
          Just 'w' -> Just North
          Just 'a' -> Just West
@@ -136,9 +134,10 @@ makeStartBoard size initial = do
 main :: IO ()
 main = do
     let size = 4
-        goal = Just (Sum 2048)
+        goal = Sum 1024
         initial = Sum 2
 
     startBoard <- makeStartBoard size initial
     putStrLn "Use 'w', 'a', 's', and 'd' to move."
     runInputT defaultSettings $ runGame initial goal startBoard mempty
+
