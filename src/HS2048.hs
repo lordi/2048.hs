@@ -6,40 +6,37 @@ module HS2048 where
 
 import Control.Monad.Random
 import Control.Monad.Writer
-import Data.Maybe
 import Data.List
 
 import qualified Data.Text as T
 
 import System.Console.Haskeline
 
-type Cell  = Maybe Int
-type Row   = [Cell]
-type Board = [Row]
-type Score = Int
+type Row   a = [a]
+type Board a = [Row a]
 data Direction = East | West | North | South deriving (Show, Eq)
 
 data MoveOutcome = Lose | Win | Active | Invalid
-data RoundResult = RoundResult Score MoveOutcome Board 
+data RoundResult a = RoundResult a MoveOutcome (Board a)
 
-showBoard :: Board -> String
+showBoard :: (Monoid a, Show a) => Board a -> String
 showBoard = T.unpack . T.unlines . fmap formatRow
-    where formatRow = T.intercalate "|" . fmap (T.center 4 ' ' . formatCell)
-          formatCell (Just x) = T.pack $ show x
-          formatCell _ = mempty
+    where formatRow = T.intercalate "|" . fmap (T.center 20 ' ' . formatCell)
+          formatCell x = T.pack $ show x
 
-shiftRow :: Row -> Writer (Sum Score) Row
+shiftRow :: (Monoid a, Eq a) => Row a -> Writer a (Row a)
 shiftRow row = liftM (++ nothings) $ sumPairs justs
-    where (justs, nothings) = partition isJust row
-          sumPairs (Just x:Just y:zs) | x == y = do
-            let total = x + y
-            tell $ Sum total
+    where (justs, nothings) = partition isNotEmpty row
+          sumPairs (x:y:zs) | x == y = do
+            let total = x `mappend` y
+            tell total
             rest <- sumPairs zs
-            return $ Just total : rest ++ [Nothing]
+            return $ total : (rest ++ [mempty])
           sumPairs (x:xs) = liftM (x :) $ sumPairs xs
           sumPairs [] = return []
+          isNotEmpty = (/= mempty)
 
-shiftBoard :: Direction -> Board -> (Board, Sum Score)
+shiftBoard :: (Monoid a, Eq a) => Direction -> Board a -> (Board a, a)
 shiftBoard direction = runWriter . case direction of
     West  -> goWest
     East  -> goEast
@@ -48,37 +45,37 @@ shiftBoard direction = runWriter . case direction of
     where goWest = mapM shiftRow
           goEast = mapM $ liftM reverse . shiftRow . reverse
 
-emptyBoard :: Int -> Board
-emptyBoard n = replicate n $ replicate n Nothing
+emptyBoard :: (Monoid a) => Int -> Board a
+emptyBoard n = replicate n $ replicate n mempty
 
 -- | coords of available spaces
-available :: Board -> [(Int, Int)]
-available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices Nothing)
+available :: (Eq a, Monoid a) => Board a -> [(Int, Int)]
+available = concat . zipWith (zip . repeat) [0..] . fmap (elemIndices mempty)
 
 --  ew
-update :: Board -> (Int, Int) -> Cell -> Board
+update :: Board a -> (Int, Int) -> a -> Board a
 update board (x, y) val = newBoard
     where (rs, r:rs') = splitAt x board
           (cs, _:cs') = splitAt y r
           newRow = cs <> (val : cs')
           newBoard = rs <> (newRow : rs')
 
-insertRandom :: MonadRandom m => Board -> m (Maybe Board)
-insertRandom board
+insertRandom :: (Monoid a, MonadRandom m, Eq a) => Board a -> a -> m (Maybe (Board a))
+insertRandom board initial
     | null holes = return Nothing
     | otherwise = do
         pos <- liftM (holes !!) $ getRandomR (0, length holes - 1)
         coin <- getRandomR (0 :: Float, 1)
-        let newCell = Just $ if coin < 0.9 then 2 else 4
+        let newCell = if coin < 0.9 then initial else (initial `mappend` initial)
         return . Just $ update board pos newCell
     where holes = available board
 
-winner :: Cell -> Board -> Bool
+winner :: (Monoid a, Eq a) => a -> Board a -> Bool
 winner winning = elem winning . concat
 
-gameRound :: MonadRandom m => Cell -> Direction -> Board -> m RoundResult
-gameRound goal direction board =
-    let (newBoard, Sum newPoints) =
+gameRound :: (MonadRandom m, Monoid a, Eq a) => a -> a -> Direction -> Board a -> m (RoundResult a)
+gameRound initial goal direction board =
+    let (newBoard, newPoints) =
             shiftBoard direction board
         result = RoundResult newPoints
         change = board /= newBoard
@@ -89,17 +86,17 @@ gameRound goal direction board =
         else if winner goal newBoard
             then return $ result Win newBoard
             else do
-                randoBoard <- insertRandom newBoard
+                randoBoard <- insertRandom newBoard initial
                 case randoBoard of
                     Nothing -> return $ result Lose newBoard
                     Just b  -> return $ result Active b
 
-runGame :: Cell -> Board -> Int -> InputT IO ()
-runGame goal board score = do
+runGame :: (Monoid a, Show a, Eq a) => a -> a -> Board a -> a -> InputT IO ()
+runGame initial goal board score = do
     liftIO . putStrLn $ showBoard board
     input <- getInputChar "wasd: "
     liftIO $ putStrLn ""
-    
+
     let direction = case input of
          Just 'w' -> Just North
          Just 'a' -> Just West
@@ -109,11 +106,11 @@ runGame goal board score = do
 
     case direction of
         Nothing ->
-            runGame goal board score
+            runGame initial goal board score
         Just dir -> do
             RoundResult newPoints moveOutcome newBoard <-
-                liftIO $ gameRound goal dir board
-            let totalScore = newPoints + score
+                liftIO $ gameRound initial goal dir board
+            let totalScore = newPoints `mappend` score
             case moveOutcome of
                 Lose -> liftIO $ 
                     putStrLn $ "You lose with " ++ show totalScore ++ " points."
@@ -123,22 +120,28 @@ runGame goal board score = do
                     liftIO $ do
                         putStrLn $ "You earned " ++ show newPoints ++ " points."
                         putStrLn $ "Total score is " ++ show totalScore ++ " points."
-                    runGame goal newBoard totalScore
+                    runGame initial goal newBoard totalScore
                 Invalid -> do
                     liftIO $ putStrLn "Invalid move, try again."
-                    runGame goal newBoard totalScore
+                    runGame initial goal newBoard totalScore
 
-makeStartBoard :: MonadRandom m => Int -> m Board
-makeStartBoard size = do
-    Just board  <- insertRandom (emptyBoard size)
-    Just board' <- insertRandom board
+makeStartBoard :: (MonadRandom m, Monoid a, Eq a) => Int -> a -> m (Board a)
+makeStartBoard size initial = do
+    Just board  <- insertRandom (emptyBoard size) initial
+    Just board' <- insertRandom board initial
     return board'
 
-main :: IO ()
-main = do
-    let size = 4
-        goal = Just 2048
+genGoal :: (Monoid a) => Int -> a -> a
+genGoal 0 = id
+genGoal steps = s <> s where s = (genGoal (steps - 1))
 
-    startBoard <- makeStartBoard size
+main :: (Monoid a, Eq a, Show a) => a -> IO ()
+main initial = do
+    let size = 4
+        goal = genGoal 10 initial
+
+    startBoard <- makeStartBoard size initial
+    putStrLn $ "Your goal is: " ++ show goal
     putStrLn "Use 'w', 'a', 's', and 'd' to move."
-    runInputT defaultSettings $ runGame goal startBoard 0
+    runInputT defaultSettings $ runGame initial goal startBoard mempty
+
