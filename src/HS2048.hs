@@ -131,13 +131,17 @@ makeStartBoard size initial = do
     Just board' <- insertRandom board initial
     return board'
 
-main :: IO ()
-main = do
+genGoal :: (Monoid a) => Int -> a -> a
+genGoal 0 = id
+genGoal steps = s <> s where s = (genGoal (steps - 1))
+
+main :: (Monoid a, Eq a, Show a) => a -> IO ()
+main initial = do
     let size = 4
-        goal = Sum 1024
-        initial = Sum 2
+        goal = genGoal 10 initial
 
     startBoard <- makeStartBoard size initial
+    putStrLn $ "Your goal is: " ++ show goal
     putStrLn "Use 'w', 'a', 's', and 'd' to move."
     runInputT defaultSettings $ runGame initial goal startBoard mempty
 
